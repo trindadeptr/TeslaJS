@@ -23,6 +23,7 @@ var request = require('request').defaults({
     body: {}
 });
 var Promise = require('promise');
+var websocket = require('ws');
 
 //=======================
 // Streaming API portal
@@ -31,7 +32,7 @@ var Promise = require('promise');
  * @global 
  * @default
  */
-var streamingPortal = "https://streaming.vn.teslamotors.com/stream";
+var streamingPortal = "wss://streaming.vn.teslamotors.com/streaming/";
 exports.streamingPortal = streamingPortal;
 
 var streamingBaseURI = process.env.TESLAJS_STREAMING || streamingPortal;
@@ -215,17 +216,69 @@ exports.getStreamingBaseURI = function getStreamingBaseURI() {
  * @return {string} vehicle model string
  */
 exports.getModel = function getModel(vehicle) {
-    var carType = "Unknown";
+    var result = exports.vinDecode(vehicle);
+    return result.carType;
+}
 
-    if (vehicle.option_codes.indexOf("MDLX") != -1) {
-        carType = "Model X";
-    } else if (vehicle.option_codes.indexOf("MDL3") != -1) {
-        carType = "Model 3";
-    } else {
-        carType = "Model S";
+/**
+ * Return an object containing properties decoded from the vehicle VIN
+ * @param {object} vehicle - vehicle JSON
+ * @return {object} vehicle properties
+ */
+exports.vinDecode = function vinDecode(vehicle) {
+    var result = {
+        carType: "Model S",
+        awd: false,
+        year: 2012
+    };
+
+    if (!vehicle || !vehicle.vin) {
+        return result;
     }
 
-    return carType;
+    var dateCode = vehicle.vin.charCodeAt(9);
+    result.year = 2010 + dateCode - 'A'.charCodeAt(0);
+
+    // handle the skipped 'I' code. We may also need to skip 'O'
+    if (dateCode > 73) {
+        result.year--;
+    }
+
+    var model = vehicle.vin.charAt(3);
+    switch (model) {
+        case "S":
+            result.carType = "Model S";
+            break;
+
+        case "3":
+            result.carType = "Model 3";
+            break;
+
+        case "X":
+            result.carType = "Model X";
+            break;
+        
+        case "Y":
+            result.carType = "Model Y";
+            break;
+
+        case "R":
+            result.carType = "Roadster";
+               break;
+    }
+
+    // Check for AWD config 2, 4 or B
+    if (
+            vehicle.vin.charAt(7) == "2" || // Dual Motor (standard) (Designated for Model S & Model X)
+            vehicle.vin.charAt(7) == "4" || // Dual Motor (performance) (Designated for Model S & Model X)
+            vehicle.vin.charAt(7) == "B" || // Dual motor - standard Model 3
+            vehicle.vin.charAt(7) == "C" || // Dual motor - performance Model 3
+            vehicle.vin.charAt(7) == "E"    // Dual motor - Model Y
+        ) {
+        result.awd = true;
+    }
+    
+    return result;
 }
 
 /**
@@ -285,41 +338,37 @@ exports.getShortVin = function getShortVin(vehicle) {
 
 /**
  * Login to the server and receive OAuth tokens
- * @param {string} username - Tesla.com username
- * @param {string} password - Tesla.com password
+ * @function login
+ * @param {Object} credentials - object of Tesla credentials
+ * @param {string} credentials.username - email address used on Tesla.com
+ * @param {string} credentials.password - password used on Tesla.command
+ * @param {string} credentials.mfaPassCode - MFA password
+ * @param {string} credentials.mfaDeviceName - MFA device name
  * @param {nodeBack} callback - Node-style callback
  * @returns {object} {response, body, authToken, refreshToken}
  */
-exports.login = function login(username, password, callback) {
+exports.login = function login(credentials, callback) {
     log(API_CALL_LEVEL, "TeslaJS.login()");
     
+    // Compatibility with old username/password API
+    if (typeof arguments[0] == 'string' && typeof arguments[1] == 'string') {
+        credentials = {username: arguments[0], password: arguments[1]};
+        callback = arguments[2];
+    }
+    
+    credentials = credentials || {};
     callback = callback || function (err, result) { /* do nothing! */ }
 
-    if (!username || !password) {
+    if (!credentials.username || !credentials.password) {
         callback("login() requires username and password", null);
         return;
-    } 
+    }
 
-    var req = {
-        method: 'POST',
-        url: portalBaseURI + '/oauth/token',
-        body: {
-            "grant_type": "password",
-            "client_id": c_id,
-            "client_secret": c_sec,
-            "email": process.env.TESLAJS_USER || username,
-            "password": process.env.TESLAJS_PASS || password
-        }
-    };
-
-    log(API_REQUEST_LEVEL, "\nRequest: " + JSON.stringify(req));
-
-    request(req, function (error, response, body) {
-
+    require('./src/auth').login({identity: credentials.username, credential: credentials.password, mfaPassCode: credentials.mfaPassCode, mfaDeviceName: credentials.mfaDeviceName}, function (error, response, body) {
         log(API_RESPONSE_LEVEL, "\nResponse: " + JSON.stringify(response));
         log(API_RESPONSE_LEVEL, "\nBody: " + JSON.stringify(body));
 
-        var loginResult = body;
+        var loginResult = body || {};
 
         callback(error, { error: error, response: response, body: body, authToken: loginResult.access_token, refreshToken: loginResult.refresh_token });
 
@@ -330,8 +379,11 @@ exports.login = function login(username, password, callback) {
 /**
  * Login to the server and receive OAuth tokens
  * @function loginAsync
- * @param {string} username - Tesla.com username
- * @param {string} password - Tesla.com password
+ * @param {Object} credentials - object of Tesla credentials
+ * @param {string} credentials.username - email address used on Tesla.com
+ * @param {string} credentials.password - password used on Tesla.command
+ * @param {string} credentials.mfaPassCode - MFA password
+ * @param {string} credentials.mfaDeviceName - MFA device name
  * @returns {Promise} {response, body, authToken, refreshToken}
  */
 exports.loginAsync = Promise.denodeify(exports.login);
@@ -350,15 +402,13 @@ exports.refreshToken = function refreshToken(refresh_token, callback) {
     if (!refresh_token) {
         callback("refreshToken() requires a refresh_token", null);
         return;
-    } 
+    }
 
     var req = {
         method: 'POST',
         url: portalBaseURI + '/oauth/token',
         body: {
             "grant_type": "refresh_token",
-            "client_id": c_id,
-            "client_secret": c_sec,
             "refresh_token": refresh_token
         }
     };
@@ -470,6 +520,62 @@ exports.vehicle = function vehicle(options, callback) {
 exports.vehicleAsync = Promise.denodeify(exports.vehicle);
 
 /**
+ * Return vehicle information on the requested vehicle. Uses options.vehicleID
+ * to determine which vehicle to fetch data for.
+ * @function vehicleById
+ * @param {optionsType} options - options object
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {Vehicle} vehicle JSON data
+ */
+ exports.vehicleById = function vehicle(options, callback) {
+  log(API_CALL_LEVEL, "TeslaJS.vehicleById()");
+
+  callback = callback || function (err, vehicle) { /* do nothing! */ }
+
+  var req = {
+      method: 'GET',
+      url: portalBaseURI + '/api/1/vehicles/' + options.vehicleID,
+      headers: { Authorization: "Bearer " + options.authToken, 'Content-Type': 'application/json; charset=utf-8' }
+  };
+
+  log(API_REQUEST_LEVEL, "\nRequest: " + JSON.stringify(req));
+
+  request(req, function (error, response, body) {
+      if (error) {
+          log(API_ERR_LEVEL, error);
+          return callback(error, null);
+      }
+
+      if (response.statusCode != 200) {
+          return callback(response.statusMessage, null);
+      }
+
+      log(API_BODY_LEVEL, "\nBody: " + JSON.stringify(body));
+      log(API_RESPONSE_LEVEL, "\nResponse: " + JSON.stringify(response));
+
+      try {
+        body = body.response;
+        
+        callback(null, body);
+    } catch (e) {
+        log(API_ERR_LEVEL, 'Error parsing vehicle response');
+        callback(e, null);
+    }
+
+      log(API_RETURN_LEVEL, "\nGET request: " + "/vehicles/" + options.vehicleID + " completed.");
+  });
+}
+
+/**
+* Return vehicle information on the requested vehicle. Uses options.vehicleID
+* to determine which vehicle to fetch data for.
+* @function vehicleByIdAsync
+* @param {optionsType} options - options object
+* @returns {Promise} vehicle JSON data
+*/
+exports.vehicleByIdAsync = Promise.denodeify(exports.vehicleById);
+
+/**
  * Return vehicle information on ALL vehicles
  * @function vehicles
  * @param {optionsType} options - options object
@@ -566,6 +672,7 @@ function get_command(options, command, callback) {
             callback(null, body);
         } catch (e) {
             log(API_ERR_LEVEL, 'Error parsing GET call response');
+            log(API_ERR_LEVEL, e);
             callback(e, null);
         }
 
@@ -650,7 +757,7 @@ exports.post_commandAsync = Promise.denodeify(exports.post_command);
  * @returns {object} vehicle_data object
  */
 exports.vehicleData = function vehicleData(options, callback){
-    get_command(options, "data", callback);
+    get_command(options, "vehicle_data", callback);
 }
 
 /**
@@ -1248,6 +1355,50 @@ exports.steeringHeater = function steeringHeater(options, level, callback) {
  */
 exports.steeringHeaterAsync = Promise.denodeify(exports.steeringHeater);
 
+/**
+ * Max Defrost
+ * @function maxDefrost
+ * @param {optionsType} options - options object
+ * @param {boolean} onoff - true for on, false for off
+ * @returns {object} result
+ */
+exports.maxDefrost = function maxDefrost(options, onoff, callback) {
+    post_command(options, "command/set_preconditioning_max", { "on": onoff }, callback);
+}
+
+/**
+ * Remote steering heater
+ * @function maxDefrostAsync
+ * @param {optionsType} options - options object
+ * @param {boolean} onoff - true for on, false for off
+ * @returns {Promise} result
+ */
+exports.maxDefrostAsync = Promise.denodeify(exports.maxDefrost);
+
+/**
+ * Window control
+ * @function windowControl
+ * @param {optionsType} options - options object
+ * @param {string} command - Allowable values are 'vent' and 'close'
+ * @param {number} lat - User latitude (can be 0 if not 'close' command)
+ * @param {number} lon - User longitude (can be 0 if not 'close' command)
+ * @returns {object} result
+ */
+exports.windowControl = function windowControl(options, command, lat, lon, callback) {
+    post_command(options, "command/window_control", { "command": command, "lat":lat || 0, "lon":lon || 0 }, callback);
+}
+
+/**
+ * Window control
+ * @function windowControlAsync
+ * @param {optionsType} options - options object
+ * @param {string} command - Allowable values are 'vent' and 'close'
+ * @param {number} lat - User latitude (can be 0 if not 'close' command)
+ * @param {number} lon - User longitude (can be 0 if not 'close' command)
+ * @returns {Promise} result
+ */
+exports.windowControlAsync = Promise.denodeify(exports.windowControl);
+
 //=====================
 // Charge limit constants
 //=====================
@@ -1328,6 +1479,87 @@ exports.chargeMaxRange = function chargeMaxRange(options, callback) {
  * @returns {Promise} result
  */
 exports.chargeMaxRangeAsync = Promise.denodeify(exports.chargeMaxRange);
+
+/**
+ * Set the charging amps.
+ * @param {optionsType} options - options object
+ * @param {int} amps - charging amps
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {object} result
+ */
+exports.setChargingAmps = function setChargingAmps(options, amps, callback) {
+    post_command(options, "command/set_charging_amps", { charging_amps: amps }, callback);
+}
+
+/**
+ * Set the charging amps async and return Promise.
+ * @function setChargingAmpsAsync
+ * @param {optionsType} options - options object
+ * @param {int} amps - charging amps
+ * @returns {Promise} result
+ */
+exports.setChargingAmpsAsync = Promise.denodeify(exports.setChargingAmps);
+
+/**
+ * Set the scheduled charging time.
+ * @param {optionsType} options - options object
+ * @param {boolean} enable - true for on, false for off
+ * @param {int} time - time in minutes since midnight, 15min step
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {object} result
+ */
+exports.setScheduledCharging = function setScheduledCharging(options, enable, time, callback) {
+    post_command(options, "command/set_scheduled_charging", { enable: enable, time: time }, callback);
+}
+
+/**
+ * Set the scheduled charging time async and return Promise.
+ * @function setScheduledCharging
+ * @param {optionsType} options - options object
+ * @param {boolean} enable - true for on, false for off
+ * @param {int} time - time in minutes since midnight, 15min step
+ * @returns {Promise} result
+ */
+exports.setScheduledChargingAsync = Promise.denodeify(exports.setScheduledCharging);
+
+/**
+ * Set the scheduled departure.
+ * @param {optionsType} options - options object
+ * @param {boolean} enable - true if (preconditioning_enabled || off_peak_charging_enabled), false otherwise (this condition may change in the future)
+ * @param {int} departure_time - time in minutes since midnight, 15min step
+ * @param {boolean} preconditioning_enabled - true for on, false for off
+ * @param {boolean} preconditioning_weekdays_only - true for on, false for off
+ * @param {boolean} off_peak_charging_enabled - true for on, false for off
+ * @param {boolean} off_peak_charging_weekdays_only - true for on, false for off
+ * @param {int} end_off_peak_time - time in minutes since midnight, 15min step
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {object} result
+ */
+exports.setScheduledDeparture = function setScheduledDeparture(options, enable, departure_time, preconditioning_enabled, preconditioning_weekdays_only, off_peak_charging_enabled, off_peak_charging_weekdays_only, end_off_peak_time, callback) {
+    post_command(options, "command/set_scheduled_departure", {
+	    "enable":enable,
+	    "departure_time":departure_time,
+	    "preconditioning_enabled":preconditioning_enabled,
+	    "preconditioning_weekdays_only":preconditioning_weekdays_only,
+	    "off_peak_charging_enabled":off_peak_charging_enabled,
+	    "off_peak_charging_weekdays_only":off_peak_charging_weekdays_only,
+	    "end_off_peak_time":end_off_peak_time }, callback);
+}
+
+/**
+ * Set the scheduled departure async and return Promise.
+ * @function setScheduledDeparture
+ * @param {optionsType} options - options object
+ * @param {boolean} enable - true if (preconditioning_enabled || off_peak_charging_enabled), false otherwise (this condition may change in the future)
+ * @param {int} departure_time - time in minutes since midnight, 15min step
+ * @param {boolean} preconditioning_enabled - true for on, false for off
+ * @param {boolean} preconditioning_weekdays_only - true for on, false for off
+ * @param {boolean} off_peak_charging_enabled - true for on, false for off
+ * @param {boolean} off_peak_charging_weekdays_only - true for on, false for off
+ * @param {int} end_off_peak_time - time in minutes since midnight, 15min step
+ * @returns {Promise} result
+ */
+exports.setScheduledDepartureAsync = Promise.denodeify(exports.setScheduledDeparture);
 
 /**
  * Lock the car doors
@@ -1496,18 +1728,16 @@ exports.setTempsAsync = Promise.denodeify(exports.setTemps);
 /**
  * Remote start the car
  * @param {optionsType} options - options object
- * @param {string} password - Tesla.com password
  * @param {nodeBack} callback - Node-style callback
  * @returns {object} result
  */
-exports.remoteStart = function remoteStartDrive(options, password, callback) {
-    post_command(options, "command/remote_start_drive", { "password": password }, callback);
+exports.remoteStart = function remoteStartDrive(options, callback) {
+    post_command(options, "command/remote_start_drive", null, callback);
 }
 
 /**
  * @function remoteStartAsync
  * @param {optionsType} options - options object
- * @param {string} password - Tesla.com password
  * @returns {Promise} result
  */
 exports.remoteStartAsync = Promise.denodeify(exports.remoteStart);
@@ -1670,8 +1900,8 @@ exports.makeCalendarEntry = function makeCalendarEntry(eventName, location, star
  * @param {nodeBack} callback - Node-style callback
  * @returns {object} result
  */
-exports.homelink = function homelink(options, lat, long, token, callback) {
-    post_command(options, "command/trigger_homelink", { lat: lat, long: long, token: token } , callback);
+exports.homelink = function homelink(options, lat, long, callback) {
+    post_command(options, "command/trigger_homelink", { lat: lat, lon: long } , callback);
 }
 
 /**
@@ -1683,6 +1913,132 @@ exports.homelink = function homelink(options, lat, long, token, callback) {
  * @returns {Promise} result
  */
 exports.homelinkAsync = Promise.denodeify(exports.homelink);
+
+/**
+ * Return list of products
+ * @function products
+ * @param {optionsType} options - options object
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {products[]} array of products JSON data
+ */
+exports.products = function products(options, callback) {
+    log(API_CALL_LEVEL, "TeslaJS.products()");
+
+    callback =
+      callback ||
+      function(err, products) {
+        /* do nothing! */
+      };
+
+    var req = {
+      method: "GET",
+      url: portalBaseURI + "/api/1/products",
+      headers: {
+        Authorization: "Bearer " + options.authToken,
+        "Content-Type": "application/json; charset=utf-8"
+      }
+    };
+
+    log(API_REQUEST_LEVEL, "\nRequest: " + JSON.stringify(req));
+
+    request(req, function(error, response, body) {
+      if (error) {
+        log(API_ERR_LEVEL, error);
+        return callback(error, null);
+      }
+
+      if (response.statusCode != 200) {
+        return callback(response.statusMessage, null);
+      }
+
+      log(API_BODY_LEVEL, "\nBody: " + JSON.stringify(body));
+      log(API_RESPONSE_LEVEL, "\nResponse: " + JSON.stringify(response));
+
+      try {
+        body = body.response;
+
+        callback(null, body);
+      } catch (e) {
+        console.log(e);
+        log(API_ERR_LEVEL, "Error parsing products response");
+        callback(e, null);
+      }
+
+      log(API_RETURN_LEVEL, "\nGET request: " + "/products" + " completed.");
+    });
+  };
+
+/**
+ * Return list of products
+ * @function productsAsync
+ * @param {optionsType} options - options object
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {Promise} array of products JSON data
+ */
+exports.productsAsync = Promise.denodeify(exports.products);
+
+/**
+ * Return live status from solar installation
+ * @function solarStatus
+ * @param {optionsType} options - options object
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {solarStatus} solarStatus JSON data
+ */
+exports.solarStatus = function solarStatus(options, callback) {
+    log(API_CALL_LEVEL, "TeslaJS.solarStatus()");
+
+    callback =
+      callback ||
+      function(err, solarStatus) {
+        /* do nothing! */
+      };
+
+    var req = {
+      method: "GET",
+      url: portalBaseURI + "/api/1/energy_sites/" + options.siteId + "/live_status",
+      headers: {
+        Authorization: "Bearer " + options.authToken,
+        "Content-Type": "application/json; charset=utf-8"
+      }
+    };
+
+    log(API_REQUEST_LEVEL, "\nRequest: " + JSON.stringify(req));
+
+    request(req, function(error, response, body) {
+      if (error) {
+        log(API_ERR_LEVEL, error);
+        return callback(error, null);
+      }
+
+      if (response.statusCode != 200) {
+        return callback(response.statusMessage, null);
+      }
+
+      log(API_BODY_LEVEL, "\nBody: " + JSON.stringify(body));
+      log(API_RESPONSE_LEVEL, "\nResponse: " + JSON.stringify(response));
+
+      try {
+        body = body.response;
+
+        callback(null, body);
+      } catch (e) {
+        log(API_ERR_LEVEL, "Error parsing solarStatus response");
+        callback(e, null);
+      }
+
+      log(API_RETURN_LEVEL, "\nGET request: " + "/solarStatus" + " completed.");
+    });
+  };
+
+/**
+ * Return solar status information
+ * @function solarStatusAsync
+ * @param {optionsType} options - options object
+ * @param {nodeBack} callback - Node-style callback
+ * @returns {Promise} solar JSON data
+ */
+exports.solarStatusAsync = Promise.denodeify(exports.solarStatus);
+
 
 /*
 //
@@ -1755,22 +2111,45 @@ exports.startStreaming = function startStreaming(options, callback, onDataCb) {
 
     options.values = options.values || exports.streamingColumns;
 
-    var req = {
-        method: 'GET',
-        url: streamingBaseURI + "/" + options.vehicle_id + '/?values=' + options.values.join(','),
-        auth:
-        {
-            username: options.username,
-            password: options.password,
+    var ws = new websocket(streamingBaseURI, {
+        perMessageDeflate: false
+    });
+
+    ws.on('message', function incoming(data) {
+        var d = JSON.parse(data);
+        if (d.msg_type == 'control:hello') {
+            ws.send(JSON.stringify({
+                msg_type: 'data:subscribe_oauth',
+                token: options.authToken,
+                value: options.values.join(','),
+                tag: options.vehicle_id.toString()
+            }));
+        } else if (d.msg_type == 'data:error') {
+            callback('Error: ' + d.value);
+        } else {
+            callback(null, null, d);
         }
-    };
+    });
 
-    log(API_REQUEST_LEVEL, "\nRequest: " + JSON.stringify(req));
+    ws.on('close', function close() {
+        callback('Websocket disconnected');
+    });
 
-  request(req, callback).on('data', function(data) {
-    onDataCb(data.toString());
-  });
+    ws.on('error', function error() {
+        callback('Websocket error');
+    });
 }
 
-var _0x2dc0 = ["\x65\x34\x61\x39\x39\x34\x39\x66\x63\x66\x61\x30\x34\x30\x36\x38\x66\x35\x39\x61\x62\x62\x35\x61\x36\x35\x38\x66\x32\x62\x61\x63\x30\x61\x33\x34\x32\x38\x65\x34\x36\x35\x32\x33\x31\x35\x34\x39\x30\x62\x36\x35\x39\x64\x35\x61\x62\x33\x66\x33\x35\x61\x39\x65", "\x63\x37\x35\x66\x31\x34\x62\x62\x61\x64\x63\x38\x62\x65\x65\x33\x61\x37\x35\x39\x34\x34\x31\x32\x63\x33\x31\x34\x31\x36\x66\x38\x33\x30\x30\x32\x35\x36\x64\x37\x36\x36\x38\x65\x61\x37\x65\x36\x65\x37\x66\x30\x36\x37\x32\x37\x62\x66\x62\x39\x64\x32\x32\x30"]; var c_id = _0x2dc0[0]; var c_sec = _0x2dc0[1];
-//var _0x2dc0 = ["\x38\x31\x35\x32\x37\x63\x66\x66\x30\x36\x38\x34\x33\x63\x38\x36\x33\x34\x66\x64\x63\x30\x39\x65\x38\x61\x63\x30\x61\x62\x65\x66\x62\x34\x36\x61\x63\x38\x34\x39\x66\x33\x38\x66\x65\x31\x65\x34\x33\x31\x63\x32\x65\x66\x32\x31\x30\x36\x37\x39\x36\x33\x38\x34", "\x63\x37\x32\x35\x37\x65\x62\x37\x31\x61\x35\x36\x34\x30\x33\x34\x66\x39\x34\x31\x39\x65\x65\x36\x35\x31\x63\x37\x64\x30\x65\x35\x66\x37\x61\x61\x36\x62\x66\x62\x64\x31\x38\x62\x61\x66\x62\x35\x63\x35\x63\x30\x33\x33\x62\x30\x39\x33\x62\x62\x32\x66\x61\x33"]; var c_id = _0x2dc0[0]; var c_sec = _0x2dc0[1];
+var promises = {};
+for (var name in exports) {
+    if (name.endsWith('Async')) {
+        continue;
+    }
+    var nameAsync = name + 'Async';
+    if (nameAsync in exports) {
+        promises[name] = exports[nameAsync];
+    } else {
+        promises[name] = exports[name];
+    }
+}
+exports.promises = promises;

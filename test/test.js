@@ -18,128 +18,170 @@ function failure(msg) {
 }
 
 describe('TeslaJS', function () {
-	var options = {authToken: "abc123", vehicleID: "1234", vehicle_id: "1", token: "1", username: user, password: pass};
+	var options = {authToken: "abc123", vehicleID: "1234567890", vehicle_id: "1", token: "1", username: user, password: pass};
     this.timeout(7500);
 
     describe('#getStreamingBaseURI()', function () {
         it('should return current streaming URI', function () {
-            assert.equal(process.env.TESLAJS_STREAMING, tjs.getStreamingBaseURI());
+            assert.strictEqual(process.env.TESLAJS_STREAMING, tjs.getStreamingBaseURI());
         });
     });
 
     describe('#setStreamingBaseURI()', function () {
         it('should reset to default portal value on empty parameter', function () {
             tjs.setStreamingBaseURI();
-            assert.equal(tjs.streamingPortal, tjs.getStreamingBaseURI());
+            assert.strictEqual(tjs.streamingPortal, tjs.getStreamingBaseURI());
         });
 
         it('should change to value passed', function () {
             tjs.setStreamingBaseURI(process.env.TESLAJS_STREAMING);
-            assert.equal(process.env.TESLAJS_STREAMING, tjs.getStreamingBaseURI());
+            assert.strictEqual(process.env.TESLAJS_STREAMING, tjs.getStreamingBaseURI());
         });
     });
 
     describe('#getPortalBaseURI()', function () {
         it('should return current portal URI', function () {
-            assert.equal(process.env.TESLAJS_SERVER, tjs.getPortalBaseURI());
+            assert.strictEqual(process.env.TESLAJS_SERVER, tjs.getPortalBaseURI());
         });
     });
 
     describe('#setPortalBaseURI()', function () {
         it('should reset to default portal value on empty parameter', function () {
             tjs.setPortalBaseURI();
-            assert.equal(tjs.portal, tjs.getPortalBaseURI());
+            assert.strictEqual(tjs.portal, tjs.getPortalBaseURI());
         });
 
         it('should change to value passed', function () {
             tjs.setPortalBaseURI(process.env.TESLAJS_SERVER);
-            assert.equal(process.env.TESLAJS_SERVER, tjs.getPortalBaseURI());
+            assert.strictEqual(process.env.TESLAJS_SERVER, tjs.getPortalBaseURI());
         });
     });
 
     describe('#getLogLevel()', function () {
         it('should return default value', function () {
-            assert.equal(process.env.TESLAJS_LOG || 0, tjs.getLogLevel());
+            assert.strictEqual(process.env.TESLAJS_LOG || 0, tjs.getLogLevel());
         });
     });
 
     describe('#setLogLevel()', function () {
         it('should change the logging level to 255', function () {
             tjs.setLogLevel(255);
-            assert.equal(255, tjs.getLogLevel());
+            assert.strictEqual(255, tjs.getLogLevel());
         });
         it('should change the logging level to default value', function () {
             tjs.setLogLevel(process.env.TESLAJS_LOG || 0);
-            assert.equal(process.env.TESLAJS_LOG || 0, tjs.getLogLevel());
+            assert.strictEqual(process.env.TESLAJS_LOG || 0, tjs.getLogLevel());
         });
     });
 
     describe('#getModel()', function () {
         it('should return Model S', function () {
-            assert.equal('Model S', tjs.getModel({"option_codes": ""}));
+            assert.strictEqual('Model S', tjs.getModel({"vin": "5YJSA1CP6DFP1"}));
         });
         it('should return Model X', function () {
-            assert.equal('Model X', tjs.getModel({"option_codes": "MDLX"}));
+            assert.strictEqual('Model X', tjs.getModel({"vin": "5YJXA1CP6DFP1"}));
         });
         it('should return Model 3', function () {
-            assert.equal('Model 3', tjs.getModel({"option_codes": "MDL3"}));
+            assert.strictEqual('Model 3', tjs.getModel({"vin": "5YJ3A1CP6DFP1"}));
+        });
+        it('should return Model Y', function () {
+            assert.strictEqual('Model Y', tjs.getModel({"vin": "5YJYA1CP6DFP1"}));
+        });
+        it('should return Roadster', function () {
+            assert.strictEqual('Roadster', tjs.getModel({"vin": "5YJRA1CP6DFP1"}));
+        });
+    });
+
+    describe('#vinDecode()', function () {
+        it('should return Model S', function () {
+            assert.strictEqual('Model S', tjs.vinDecode({"vin": "5YJSA1CP6DFP1"}).carType);
+        });
+        it('should return Model X', function () {
+            assert.strictEqual('Model X', tjs.vinDecode({"vin": "5YJXA1CP6DFP1"}).carType);
+        });
+        it('should return Model 3', function () {
+            assert.strictEqual('Model 3', tjs.vinDecode({"vin": "5YJ3A1CP6DFP1"}).carType);
+        });
+        it('should return Model Y', function () {
+            assert.strictEqual('Model Y', tjs.vinDecode({"vin": "5YJYA1CP6DFP1"}).carType);
+        });
+        it('should return Roadster', function () {
+            assert.strictEqual('Roadster', tjs.vinDecode({"vin": "5YJRA1CP6DFP1"}).carType);
+        });
+        it('should return 2013', function () {
+            assert.strictEqual(2013, tjs.vinDecode({"vin": "5YJSA1CP6DFP1"}).year);
+        });
+        it('should return 2017', function () {
+            assert.strictEqual(2017, tjs.vinDecode({"vin": "5YJYA1CP6HFP1"}).year);
+        });
+        it('should return 2018', function () {
+            assert.strictEqual(2018, tjs.vinDecode({"vin": "5YJYA1CP6JFP1"}).year);
+        });
+        it('should return 2020', function () {
+            assert.strictEqual(2020, tjs.vinDecode({"vin": "5YJYA1CP6LFP1"}).year);
+        });
+        it('should return no AWD', function () {
+            assert.strictEqual(false, tjs.vinDecode({"vin": "5YJSA1CP6DFP1"}).awd);
+        });
+        it('should return AWD', function () {
+            assert.strictEqual(true, tjs.vinDecode({"vin": "5YJSA1C26DFP1"}).awd);
         });
     });
 
     describe('#getPaintColor()', function () {
         it('should return white', function () {
-            assert.equal('white', tjs.getPaintColor({"option_codes": "PBCW"}));
+            assert.strictEqual('white', tjs.getPaintColor({"option_codes": "PBCW"}));
         });
         it('should return black', function () {
-            assert.equal('black', tjs.getPaintColor({"option_codes": "PBSB"}));
+            assert.strictEqual('black', tjs.getPaintColor({"option_codes": "PBSB"}));
         });
         it('should return metallic brown', function () {
-            assert.equal('metallic brown', tjs.getPaintColor({"option_codes": "PMAB"}));
+            assert.strictEqual('metallic brown', tjs.getPaintColor({"option_codes": "PMAB"}));
         });
         it('should return metallic black', function () {
-            assert.equal('metallic black', tjs.getPaintColor({"option_codes": "PMBL"}));
+            assert.strictEqual('metallic black', tjs.getPaintColor({"option_codes": "PMBL"}));
         });
         it('should return metallic blue', function () {
-            assert.equal('metallic blue', tjs.getPaintColor({"option_codes": "PMMB"}));
+            assert.strictEqual('metallic blue', tjs.getPaintColor({"option_codes": "PMMB"}));
         });
         it('should return multi-coat red', function () {
-            assert.equal('multi-coat red', tjs.getPaintColor({"option_codes": "PMMR"}));
+            assert.strictEqual('multi-coat red', tjs.getPaintColor({"option_codes": "PMMR"}));
         });
         it('should return multi-coat red', function () {
-            assert.equal('multi-coat red', tjs.getPaintColor({"option_codes": "PPMR"}));
+            assert.strictEqual('multi-coat red', tjs.getPaintColor({"option_codes": "PPMR"}));
         });
         it('should return steel grey', function () {
-            assert.equal('steel grey', tjs.getPaintColor({"option_codes": "PMNG"}));
+            assert.strictEqual('steel grey', tjs.getPaintColor({"option_codes": "PMNG"}));
         });
         it('should return metallic green', function () {
-            assert.equal('metallic green', tjs.getPaintColor({"option_codes": "PMSG"}));
+            assert.strictEqual('metallic green', tjs.getPaintColor({"option_codes": "PMSG"}));
         });
         it('should return metallic silver', function () {
-            assert.equal('metallic silver', tjs.getPaintColor({"option_codes": "PMSS"}));
+            assert.strictEqual('metallic silver', tjs.getPaintColor({"option_codes": "PMSS"}));
         });
         it('should return ocean blue', function () {
-            assert.equal('ocean blue', tjs.getPaintColor({"option_codes": "PPSB"}));
+            assert.strictEqual('ocean blue', tjs.getPaintColor({"option_codes": "PPSB"}));
         });
         it('should return signature red', function () {
-            assert.equal('signature red', tjs.getPaintColor({"option_codes": "PPSR"}));
+            assert.strictEqual('signature red', tjs.getPaintColor({"option_codes": "PPSR"}));
         });
         it('should return pearl white', function () {
-            assert.equal('pearl white', tjs.getPaintColor({"option_codes": "PPSW"}));
+            assert.strictEqual('pearl white', tjs.getPaintColor({"option_codes": "PPSW"}));
         });
         it('should return titanium', function () {
-            assert.equal('titanium', tjs.getPaintColor({"option_codes": "PPTI"}));
+            assert.strictEqual('titanium', tjs.getPaintColor({"option_codes": "PPTI"}));
         });
         it('should return metallic grey', function () {
-            assert.equal('metallic grey', tjs.getPaintColor({"option_codes": "PMTG"}));
+            assert.strictEqual('metallic grey', tjs.getPaintColor({"option_codes": "PMTG"}));
         });
         it('should return black', function () {
-            assert.equal('black', tjs.getPaintColor({"option_codes": "PPPP"}));
+            assert.strictEqual('black', tjs.getPaintColor({"option_codes": "PPPP"}));
         });
     });
 
     describe('#getVin()', function () {
         it('should return the VIN', function () {
-            assert.equal("5YJSA1H16EFP12345", tjs.getVin({"vin": "5YJSA1H16EFP12345"}));
+            assert.strictEqual("5YJSA1H16EFP12345", tjs.getVin({"vin": "5YJSA1H16EFP12345"}));
         });
         
 		it('should throw with no input', function () {
@@ -157,7 +199,7 @@ describe('TeslaJS', function () {
 
     describe('#getShortVin()', function () {
         it('should return the short VIN', function () {
-            assert.equal("P12345", tjs.getShortVin({"vin": "5YJSA1H16EFP12345"}));
+            assert.strictEqual("P12345", tjs.getShortVin({"vin": "5YJSA1H16EFP12345"}));
         });
         
 		it('should throw with no input', function () {
@@ -173,77 +215,77 @@ describe('TeslaJS', function () {
         });
 	});
 
-	describe('#login()', function() {
-	    it('should succeed with valid user and pwd', function (done) {
-			tjs.login(user, pass, function(err, result) {
-				if (result.response.statusCode == 200) {
-				    options.authToken = result.authToken;
-                    done();
-				} else {
-				    done(result.response.statusMessage);
-				}
-			});
-		});
+	// describe('#login()', function() {
+	//     it('should succeed with valid user and pwd', function (done) {
+	// 		tjs.login(user, pass, function(err, result) {
+	// 			if (result.response.statusCode == 200) {
+	// 			    options.authToken = result.authToken;
+    //                 done();
+	// 			} else {
+	// 			    done(result.response.statusMessage);
+	// 			}
+	// 		});
+	// 	});
 
-	    it('should succeed with valid user and pwd and no callback', function (done) {
-	        tjs.login(user, pass);
-	        done();
-	    });
+	//     it('should succeed with valid user and pwd and no callback', function (done) {
+	//         tjs.login(user, pass);
+	//         done();
+	//     });
 
-	    it('should fail with invalid user or pwd', function (done) {
-	        tjs.login(null, null, function(err, result){
-				if (err) {
-			        done();
-				} else {
-					done(result);
-				}
-			});
-	    });
-	});
+	//     it('should fail with invalid user or pwd', function (done) {
+	//         tjs.login(null, null, function(err, result){
+	// 			if (err) {
+	// 		        done();
+	// 			} else {
+	// 				done(result);
+	// 			}
+	// 		});
+	//     });
+	// });
 
-	describe('#loginAsync()', function () {
-	    it('should succeed with valid user and pwd', function () {
-	        return tjs.loginAsync(user, pass).then(function (result) {
-	            assert.equal(result.response.statusCode, 200);
-	        });
-	    });
-	});
+	// describe('#loginAsync()', function () {
+	//     it('should succeed with valid user and pwd', function () {
+	//         return tjs.loginAsync(user, pass).then(function (result) {
+	//             assert.strictEqual(result.response.statusCode, 200);
+	//         });
+	//     });
+	// });
 
-	describe('#refreshToken()', function() {
-	    it('should succeed with valid refresh token', function (done) {
-			tjs.refreshToken("faketoken", function(err, result) {
-				if (result.response.statusCode == 200) {
-				    options.authToken = result.authToken;
-                    done();
-				} else {
-				    done(result.response.statusMessage);
-				}
-			});
-		});
+	// describe('#refreshToken()', function() {
+	//     it('should succeed with valid refresh token', function (done) {
+	// 		tjs.refreshToken("faketoken", function(err, result) {
+	// 			if (result.response.statusCode == 200) {
+	// 			    options.authToken = result.authToken;
+    //                 done();
+	// 			} else {
+	// 			    done(result.response.statusMessage);
+	// 			}
+	// 		});
+	// 	});
 
-	    it('should succeed with valid refresh token and no callback', function (done) {
-	        tjs.refreshToken("faketoken");
-	        done();
-	    });
+	//     it('should succeed with valid refresh token and no callback', function (done) {
+	//         tjs.refreshToken("faketoken");
+	//         done();
+	//     });
 
-	    it('should fail with missing refresh token', function (done) {
-	        tjs.refreshToken(null, function(err, result){
-				if (err) {
-			        done();
-				} else {
-					done(result);
-				}
-			});
-	    });
-	});
+	//     it('should fail with missing refresh token', function (done) {
+	//         tjs.refreshToken(null, function(err, result){
+	// 			if (err) {
+	// 		        done();
+	// 			} else {
+	// 				done(result);
+	// 			}
+	// 		});
+	//     });
+	// });
 
-	describe('#refreshTokenAsync()', function () {
-	    it('should succeed with valid user and pwd', function () {
-	        return tjs.refreshTokenAsync("faketoken").then(function (result) {
-	            assert.equal(result.response.statusCode, 200);
-	        });
-	    });
-	});
+	// describe('#refreshTokenAsync()', function () {
+	//     it('should succeed with valid user and pwd', function () {
+	//         return tjs.refreshTokenAsync("faketoken").then(function (result) {
+	//             assert.strictEqual(result.response.statusCode, 200);
+	//         });
+	//     });
+	// });
 
 	describe('#logout()', function () {
 	    it('should succeed', function (done) {
@@ -320,6 +362,31 @@ describe('TeslaJS', function () {
 	    });
 	});
 
+  describe('#vehicleById()', function () {
+    it('should succeed getting the vehicle', function (done) {
+        tjs.vehicleById(options, function (err, vehicle) {
+            if (vehicle.vehicle_id) {
+                done();
+            } else {
+                done(vehicle.response.statusMessage);
+            }
+        });
+    });
+
+    it('should succeed with no callback', function (done) {
+        tjs.vehicleById(options);
+        done();
+    });
+});
+
+describe('#vehicleByIdAsync()', function () {
+    it('should succeed getting the vehicle', function () {
+        return tjs.vehicleByIdAsync(options).then(function (result) {
+            assert(result.vehicle_id);
+        });
+    });
+});
+
 	describe('#vehicles()', function () {
 	    it('should succeed enumerating vehicles', function (done) {
 	        tjs.vehicles(options, function (err, vehicles) {
@@ -344,6 +411,31 @@ describe('TeslaJS', function () {
 	        });
 	    });
 	});
+
+    describe('#vehicleById()', function () {
+        it('should succeed getting the vehicle', function (done) {
+            tjs.vehicleById(options, function (err, vehicle) {
+                if (vehicle.vehicle_id) {
+                    done();
+                } else {
+                    done(vehicle.response.statusMessage);
+                }
+            });
+        });
+
+        it('should succeed with no callback', function (done) {
+            tjs.vehicleById(options);
+            done();
+        });
+    });
+
+    describe('#vehicleByIdAsync()', function () {
+        it('should succeed getting the vehicle', function () {
+            return tjs.vehicleByIdAsync(options).then(function (result) {
+                assert(result.vehicle_id);
+            });
+        });
+    });
 
     describe('#vehicleConfig()', function () {
         it('should return vehicle config', function (done) {
@@ -912,7 +1004,7 @@ describe('TeslaJS', function () {
 
 	describe('#remoteStart()', function () {
 	    it('should return true', function (done) {
-	        tjs.remoteStart(options, "password", function (err, result) {
+	        tjs.remoteStart(options, function (err, result) {
 	            if (result.result) {
 	                done();
 	            } else {
@@ -924,7 +1016,7 @@ describe('TeslaJS', function () {
 
 	describe('#remoteStartAsync()', function () {
 	    it('should return true', function () {
-	        return tjs.remoteStartAsync(options, "password").then(function (result) {
+	        return tjs.remoteStartAsync(options).then(function (result) {
 	            assert(result.result);
 	        });
 	    });
@@ -1031,7 +1123,7 @@ describe('TeslaJS', function () {
 
 	describe('#homelink()', function () {
 	    it('should return true', function (done) {
-	        tjs.homelink(options, 75, 34, "token", function (err, result) {
+	        tjs.homelink(options, 75, 34, function (err, result) {
 	            if (result.result) {
 	                done();
 	            } else {
@@ -1043,7 +1135,7 @@ describe('TeslaJS', function () {
 
 	describe('#homelinkAsync()', function () {
 	    it('should return true', function () {
-	        return tjs.homelinkAsync(options, 75, 34, "token").then(function (result) {
+	        return tjs.homelinkAsync(options, 75, 34).then(function (result) {
 	            assert(result.result);
 	        });
 	    });
@@ -1093,27 +1185,27 @@ describe('TeslaJS', function () {
 	    });
 	});
 
-	describe('#startStreaming()', function () {
-	    it('should succeed', function (done) {
-			tjs.startStreaming(options, 
-				function (err, response, body) {
-					if (response) {
-						done();
-					} else {
-						done(err);
-					}
-				},
-				function(data) {
-					// do nothing!
-				}
-			);
-	    });
+	// describe('#startStreaming()', function () {
+	//     it('should succeed', function (done) {
+	// 		tjs.startStreaming(options, 
+	// 			function (err, response, body) {
+	// 				if (response) {
+	// 					done();
+	// 				} else {
+	// 					done(err);
+	// 				}
+	// 			},
+	// 			function(data) {
+	// 				// do nothing!
+	// 			}
+	// 		);
+	//     });
 
-	    it('should succeed with no callback', function (done) {
-	        tjs.startStreaming(options);
-			done();
-	    });
-	});
+	//     it('should succeed with no callback', function (done) {
+	//         tjs.startStreaming(options);
+	// 		done();
+	//     });
+	// });
 
 	describe('#scheduleSoftwareUpdate()', function () {
 	    it('should succeed', function (done) {
@@ -1468,7 +1560,7 @@ describe('TeslaJS', function () {
 	describe('#nearbyChargers()', function () {
 	    it('should succeed', function (done) {
 	        tjs.nearbyChargers(options, function (err, result) {
-				if (result.result) {
+				if (result.congestion_sync_time_utc_secs == 1547415712) {
 					done();
 				} else {
 					done(err);
@@ -1540,6 +1632,52 @@ describe('TeslaJS', function () {
 	    });
 	});
 
+	describe('#windowControl()', function () {
+	    it('should succeed with "vent"', function (done) {
+	        tjs.windowControl(options, "vent", 0, 0, function (err, result) {
+				if (result.result) {
+					done();
+				} else {
+					done(err);
+				}
+	        });
+		});
+		
+	    it('should succeed with "close"', function (done) {
+	        tjs.windowControl(options, "close", 0, 0, function (err, result) {
+				if (result.result) {
+					done();
+				} else {
+					done(err);
+				}
+	        });
+	    });
+
+	    it('should succeed with "vent" and no callback', function (done) {
+	        tjs.windowControl(options, "vent", 0, 0);
+	        done();
+	    });
+
+	    it('should succeed with "close" and no callback', function (done) {
+	        tjs.windowControl(options, "close", 0, 0);
+	        done();
+	    });
+	});
+
+	describe('#windowControlAsync()', function () {
+	    it('should succeed with "vent"', function () {
+	        return tjs.windowControlAsync(options, "vent", 0, 0).then(function (result) {
+				assert(result.result, true);
+			});
+	    });
+
+		it('should succeed with "close"', function () {
+	        return tjs.windowControlAsync(options, "close", 0, 0).then(function (result) {
+				assert(result.result, true);
+			});
+	    });
+	});
+
 	describe('#navigationRequest()', function () {
 	    it('should succeed', function (done) {
 	        tjs.navigationRequest(options, "subject", "text", "locale", function (err, result) {
@@ -1564,4 +1702,93 @@ describe('TeslaJS', function () {
 			});
 	    });
 	});
+
+	describe('#maxDefrost()', function () {
+	    it('should succeed', function (done) {
+	        tjs.maxDefrost(options, true, function (err, result) {
+				if (result.result) {
+					done();
+				} else {
+					done(err);
+				}
+	        });
+	    });
+
+	    it('should succeed with no callback', function (done) {
+	        tjs.maxDefrost(options, true);
+	        done();
+	    });
+	});
+
+	describe('#maxDefrostAsync()', function () {
+	    it('should succeed', function () {
+	        return tjs.maxDefrostAsync(options, true).then(function (result) {
+				assert(result.result, true);
+			});
+	    });
+	});	
+
+	describe("#products()", function () {
+		it("should succeed", function(done) {
+			tjs.products(options, function(err, result) {
+				if (Array.isArray(result)) {
+					done();
+				} else {
+					done(err);
+				}
+			});
+		});
+	});
+
+	describe("#productsAsync()", function () {
+		it("should succeed", function() {
+			return tjs.productsAsync(options).then( function(result) {
+				assert(Array.isArray(result), true);
+			});
+		});
+	});
+
+	describe("#solarStatus()", function() {
+		it("should return the current solar production", function(done) {
+			tjs.solarStatus({ siteId: 1 }, function(err, result) {
+				assert.strictEqual(1000, result.solar_power);
+				done();
+			});
+		});
+
+		it("should return the current power consumption", function(done) {
+			tjs.solarStatus({ siteId: 1 }, function(err, result) {
+				assert.strictEqual(750, result.load_power);
+				done();
+			});
+		});
+
+		it("should return the current net grid power", function(done) {
+			tjs.solarStatus({ siteId: 1 }, function(err, result) {
+				assert.strictEqual(250, result.grid_power);
+				done();
+			});
+		});
+	}); 
+
+	describe("#solarStatusAsync()", function() {
+		it("should return the current solar production", function() {
+			return tjs.solarStatusAsync({ siteId: 1 }).then(function(result) {
+				assert.strictEqual(1000, result.solar_power);
+			});
+		});
+
+		it("should return the current power consumption", function() {
+			return tjs.solarStatusAsync({ siteId: 1 }).then(function(result) {
+				assert.strictEqual(750, result.load_power);
+			});
+		});
+
+		it("should return the current net grid power", function() {
+			return tjs.solarStatusAsync({ siteId: 1 }).then(function(result) {
+				assert.strictEqual(250, result.grid_power);
+			});
+		});
+	}); 
+
 });
